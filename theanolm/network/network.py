@@ -32,6 +32,8 @@ from theanolm.network.hsoftmaxlayer import HSoftmaxLayer
 from theanolm.network.dropoutlayer import DropoutLayer
 from theanolm.network.bidirectionallayer import BidirectionalLayer
 from theanolm.network.samplingoutputlayer import SamplingOutputLayer
+from theanolm.network.additiveattentionlayer import AdditiveAttentionLayer
+from theanolm.network.qkvattentionlayer import QKVAttentionLayer
 
 def create_layer(layer_options, *args, **kwargs):
     """Constructs one of the Layer classes based on a layer definition.
@@ -63,6 +65,10 @@ def create_layer(layer_options, *args, **kwargs):
         return HSoftmaxLayer(layer_options, *args, **kwargs)
     elif layer_type == 'dropout':
         return DropoutLayer(layer_options, *args, **kwargs)
+    elif layer_type == 'additiveattention':
+        return AdditiveAttentionLayer(layer_options, *args, **kwargs)
+    elif layer_type == 'qkvattention':
+        return QKVAttentionLayer(layer_options, *args, **kwargs)
     else:
         raise ValueError("Invalid layer type requested: " + layer_type)
 
@@ -184,6 +190,9 @@ class Network(object):
         self.recurrent_state_input = []
         self.recurrent_state_size = []
 
+        # The decoder needs this information
+        self.has_attention = False
+
         # Create the layers.
         logging.debug("Creating layers.")
         self.layers = OrderedDict()
@@ -199,6 +208,9 @@ class Network(object):
             # Remove at some point.
             if ('devices' not in layer_options) or (not layer_options['devices']):
                 layer_options['devices'] = [default_device]
+            layer_type = layer_options['type']
+            if layer_type == 'additiveattention' or layer_type == 'qkvattention':
+                self.has_attention=True
             layer = create_layer(layer_options, self, profile=profile)
             self.layers[layer.name] = layer
         self.output_layer = self.layers[architecture.output_layer]

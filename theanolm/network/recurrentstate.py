@@ -120,7 +120,7 @@ class RecurrentState:
                                  "step.")
             if state_variable.shape[1] != self.num_sequences:
                 raise ValueError("Recurrent state contains incorrect number of "
-                                 "sequences.")
+                                 "sequences. %d %d", state_variable.shape[1], self.num_sequences)
             if state_variable.shape[2] != size:
                 raise ValueError("Recurrent state contains a layer with "
                                  "incorrect size.")

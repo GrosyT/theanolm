@@ -5,6 +5,7 @@
 
 import theano
 import theano.tensor as tensor
+import logging
 from theanolm.network.weightfunctions import get_submatrix
 from theanolm.network.basiclayer import BasicLayer
 
@@ -122,21 +123,41 @@ class LSTMLayer(BasicLayer):
                 self._network.recurrent_state_input[self.cell_state_index]
             hidden_state_input = \
                 self._network.recurrent_state_input[self.hidden_state_index]
+            #if network has attention we need to calculate all outputs, not just the current one
+            state_outputs = None
+            if self._network.has_attention:
+                sequences = [self._network.mask, layer_input_preact]
+                non_sequences = [hidden_state_weights]
+                initial_cell_state = tensor.zeros(
+                    (num_sequences, self.output_size), dtype=theano.config.floatX)
+                initial_hidden_state = tensor.zeros(
+                    (num_sequences, self.output_size), dtype=theano.config.floatX)
 
-            state_outputs = self._create_time_step(
-                self._network.mask[0],
-                layer_input_preact[0],
-                cell_state_input[0],
-                hidden_state_input[0],
-                hidden_state_weights)
+                state_outputs, _ = theano.scan(
+                    self._create_time_step,
+                    sequences=sequences,
+                    outputs_info=[initial_cell_state, initial_hidden_state],
+                    non_sequences=non_sequences,
+                    go_backwards=self._reverse_time,
+                    name='lstm_steps',
+                    n_steps=num_time_steps,
+                    profile=self._profile,
+                    strict=True)
+                state_outputs[0] = state_outputs[0][-1,:,:]
+                state_outputs[1] = state_outputs[1][-1,:,:]
+            else:
+                state_outputs = self._create_time_step(
+                    self._network.mask[0],
+                    layer_input_preact[0],
+                    cell_state_input[0],
+                    hidden_state_input[0],
+                    hidden_state_weights)
 
             cell_state_output = state_outputs[0]
             hidden_state_output = state_outputs[1]
-
             # Create a new axis for time step with size 1.
             cell_state_output = cell_state_output[None, :, :]
             hidden_state_output = hidden_state_output[None, :, :]
-
             self._network.recurrent_state_output[self.cell_state_index] = \
                 cell_state_output
             self._network.recurrent_state_output[self.hidden_state_index] = \
