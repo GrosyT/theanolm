@@ -626,33 +626,78 @@ class LatticeDecoder(object):
             else:
                 return self._unk_id
 
-        input_word_ids = [[limit_to_shortlist(self, token.history[-1])
-                           for token in tokens]]
-        input_word_ids = numpy.asarray(input_word_ids).astype('int64')
-        input_class_ids, membership_probs = \
-            self._vocabulary.get_class_memberships(input_word_ids)
-        recurrent_state = [token.state for token in tokens]
-        recurrent_state = RecurrentState.combine_sequences(recurrent_state)
-        target_word_id = limit_to_shortlist(self, target_word)
-        target_class_ids = numpy.ones(shape=(1, len(tokens))).astype('int64')
-        target_class_ids *= self._vocabulary.word_id_to_class_id[target_word_id]
-        step_result = self._step_function(input_word_ids,
+
+        # Pass all/limited previous input if the net has attention
+        if self._network.has_attention:
+            # handle sequeces separately as the history could be varying length
+            for index, token in enumerate(tokens):
+                input_word_ids = [[limit_to_shortlist(self, t) for t in token.history]]
+                input_word_ids = numpy.asarray(input_word_ids).astype('int64').transpose()
+                #logging.debug("input shape: %s", input_word_ids.shape)
+                input_class_ids, membership_prob = \
+                   self._vocabulary.get_class_memberships(input_word_ids)
+                recurrent_state = [token.state]
+                recurrent_state = RecurrentState.combine_sequences(recurrent_state)
+                target_word_id = limit_to_shortlist(self, target_word)
+                target_class_ids = numpy.ones(shape=(1, 1)).astype('int64')
+                target_class_ids *= self._vocabulary.word_id_to_class_id[target_word_id]
+                sub_step_result = self._step_function(input_word_ids,
                                           input_class_ids,
                                           target_class_ids,
                                           *recurrent_state.get())
-        logprobs = step_result[0]
-        # Add logprobs from the class membership of the predicted words.
-        logprobs += numpy.log(membership_probs)
-        output_state = step_result[1:]
-
-        for index, token in enumerate(tokens):
-            token.history = token.history + (target_word,)
-            token.state = RecurrentState(self._network.recurrent_state_size)
-            # Slice the sequence that corresponds to this token.
-            token.state.set([layer_state[:, index:index + 1]
+                #update token with the values
+                logprobs = sub_step_result[0] 
+                #logging.debug("Logprobs shape: %s, %s", logprobs.shape, self._network.recurrent_state_size)
+                # Add logprobs from the class membership of the predicted words.
+                logprobs += numpy.log(membership_prob[-1,:])
+                output_state = sub_step_result[1:]
+                token.history = token.history + (target_word,)
+                token.state = RecurrentState(self._network.recurrent_state_size)
+                # Slice the sequence that corresponds to this token.
+                token.state.set([layer_state
                              for layer_state in output_state])
-            # logprobs matrix contains only one time step.
-            token.nn_lm_logprob += self._handle_unk_logprob(target_word,
+                # logprobs matrix contains only one time step.
+                token.nn_lm_logprob += self._handle_unk_logprob(target_word,
+                                                            logprobs[0, 0],
+                                                            oov_logprob)
+                
+
+        #logging.debug("Next time step")
+        #for i, data in enumerate(input_word_ids):
+        #    logging.debug("Length of data: %d, %s", len(data), data)
+        #    if len(data)<max_len:
+                #pad with zeros
+        #        input_word_ids[i] = [0] * (max_len-len(data)) + data
+        #        logging.debug("New length of data: %d, %s", len(input_word_ids[i]), input_word_ids[i])
+        # No attention in the network
+        else:
+            input_word_ids = [[limit_to_shortlist(self, token.history[-1])
+                           for token in tokens]]            
+            input_word_ids = numpy.asarray(input_word_ids).astype('int64')
+            input_class_ids, membership_probs = \
+                self._vocabulary.get_class_memberships(input_word_ids)
+            recurrent_state = [token.state for token in tokens]
+            recurrent_state = RecurrentState.combine_sequences(recurrent_state)
+            target_word_id = limit_to_shortlist(self, target_word)
+            target_class_ids = numpy.ones(shape=(1, len(tokens))).astype('int64')
+            target_class_ids *= self._vocabulary.word_id_to_class_id[target_word_id]
+            step_result = self._step_function(input_word_ids,
+                                          input_class_ids,
+                                          target_class_ids,
+                                          *recurrent_state.get())
+            logprobs = step_result[0] 
+            # Add logprobs from the class membership of the predicted words.
+            logprobs += numpy.log(membership_probs)
+            output_state = step_result[1:]
+
+            for index, token in enumerate(tokens):
+                token.history = token.history + (target_word,)
+                token.state = RecurrentState(self._network.recurrent_state_size)
+                # Slice the sequence that corresponds to this token.
+                token.state.set([layer_state[:, index:index + 1]
+                                 for layer_state in output_state])
+                # logprobs matrix contains only one time step.
+                token.nn_lm_logprob += self._handle_unk_logprob(target_word,
                                                             logprobs[0, index],
                                                             oov_logprob)
 
