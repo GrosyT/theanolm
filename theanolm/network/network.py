@@ -70,8 +70,8 @@ def create_layer(layer_options, *args, **kwargs):
         return LSTMXLLayer(layer_options, *args, **kwargs)
     elif layer_type == 'qkvattention':
         return QKVAttentionLayer(layer_options, *args, **kwargs)
-    elif layer_type == 'lstmxl':
-        return LSTMXLLayer(layer_options, *args, **kwargs)
+    elif layer_type == 'additiveattention':
+        return AdditiveAttentionLayer(layer_options, *args, **kwargs)
     else:
         raise ValueError("Invalid layer type requested: " + layer_type)
 
